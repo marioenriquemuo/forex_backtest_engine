@@ -1,4 +1,8 @@
-"""Object-oriented backtest engine. Signal on close t, fill from open t+1."""
+"""Object-oriented backtest engine. Signal on close t, fill from open t+1.
+
+Optional htf_rules attach completed higher-timeframe frames on account["htf"].
+During on_bar, window/handler.data/strategy.data are prefixes only.
+"""
 
 from dataclasses import dataclass, field
 from typing import Dict, List

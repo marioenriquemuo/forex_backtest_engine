@@ -58,6 +58,7 @@ engine = OOEngine(
     handlers={"EUR/USD": handler},
     strategies={"EUR/USD": MyStrategy()},
     start_balance=100000.0,
+    htf_rules=("4H",),  # optional; omit if you only use the chart timeframe
 )
 result = engine.run()
 ```
@@ -157,7 +158,10 @@ orders = strategy.on_bar(window, account)
 
 - All bars from the start **through the current bar**.
 - Last row = this bar. There is no next bar in `window`.
+- It is a **copy**. Changing `window` does not change the engine’s stored prices.
 - Use `window.iloc[-1]` for “now”. Do not try `window.iloc[len(window)]`.
+
+During this call the engine also cuts `handler.data` and `strategy.data` to the same last timestamp, then puts the full series back afterwards.
 
 **`account`** (a dict)
 
@@ -298,6 +302,23 @@ What this example does, in order:
 
 That is enough to prove you called the engine correctly. Then replace `make_tiny_data()` with `DataHandler.from_csv(...)` and replace `BuyOnce` with your real rules.
 
+### 2.5 Higher timeframe (optional)
+
+```python
+engine = OOEngine(
+    handlers={pair: handler},
+    strategies={pair: MyStrategy()},
+    start_balance=100000.0,
+    htf_rules=("4H",),
+)
+
+# inside on_bar:
+h4 = account["htf"]["4H"]
+h4_close = h4.iloc[-1]["BidClose"]  # NaN until that 4h candle is finished
+```
+
+Use this dict (or `handler.resample_htf("4H")` **inside** `on_bar`). Do not resample the whole file once at start-up and keep it.
+
 ---
 
 ## 3. What the engine is delivering
@@ -367,6 +388,7 @@ paths = export_logs(result, "out")
 plot_dashboard(result, "out/dash.html")
 if result.trades:
     plot_trade(handler, result.trades[0], "out/trade.html")
+    # lookforward=5 draws extra candles after the exit for the picture only
 ```
 
 Those HTML files need `plotly`.
@@ -385,6 +407,7 @@ Those HTML files need `plotly`.
 8. If you leave `lots=None`, you must set `sl`, and size follows `max_risk_per_trade`.
 9. `max_active_trades_per_pair` blocks **new entries** when you are at the cap. `EXIT` still works. Raise the cap while you debug.
 10. First run: tiny data, one order, print `result.trades` and `result.queue_log`. Then use your CSV.
+11. For 4h/daily filters, set `htf_rules` and read `account["htf"]`. Do not keep a full-file HTF cache.
 
 ### Multi-timeframe (no future bars)
 
@@ -393,8 +416,9 @@ The engine will not let a higher timeframe see a candle before that candle is **
 - Pass `htf_rules=("4H",)` (and/or `"1D"`, etc.) into `OOEngine`.
 - In `on_bar`, read `account["htf"]["4H"].iloc[-1]`. That row is aligned to the current LTF bar.
 - An H4 bar labelled 00:00 uses H1 00:00–03:00 and is first visible on the **04:00** H1 bar (`align_htf_pit`: shift one HTF bar, then forward-fill). A signal there still fills at the **next** H1 open (05:00).
-- Do **not** cache `handler.resample_htf(...)` on the full file and then take `.iloc[-1]` as “now”. During `on_bar` the handler only exposes bars up to now, and `resample_htf` applies the same PIT shift.
-- Do **not** treat a forming 4h bar (01:00 / 02:00 / 03:00) as a closed 4h candle. The engine drops that.
+- During `on_bar`, `handler.data` and `strategy.data` stop at the current bar. After the call they are restored.
+- Do **not** cache `handler.resample_htf(...)` on the full file in `__init__` and then take `.iloc[-1]` as “now”.
+- Do **not** call `resample_ohlc(window)` and treat a forming 4h bar (01:00 / 02:00 / 03:00) as a closed 4h candle. `account["htf"]` and `handler.resample_htf` already apply the PIT shift.
 
 `plot_trade(..., lookforward=5)` may draw later candles. That is a chart only. Do not use it as signal input.
 

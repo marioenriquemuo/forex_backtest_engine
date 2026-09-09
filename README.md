@@ -22,7 +22,15 @@ A strategy only sees bars **up to the current bar**. It cannot read tomorrow.
 
 The signal is taken on the **close of bar t**. The fill happens from the **open of bar t+1**. That delay is on purpose. Filling at the same close that created the signal would make results look better than real life.
 
-Higher-timeframe data is also delayed until that higher bar is finished. The engine does not let you use a 4-hour candle before it has closed.
+During `on_bar` the engine also:
+
+- gives you a **copy** of that prefix (`window`), so changing it does not change later prices
+- cuts `handler.data` and `strategy.data` to “now”
+- still calls the strategy when you are at the open-trade cap; new entries are dropped, `EXIT` still queues
+
+**Higher timeframes:** pass `htf_rules` (for example `("4H",)`) into `OOEngine`. Then read `account["htf"]["4H"]`. Those frames use completed candles only (`align_htf_pit`: shift one HTF bar, then forward-fill). An H4 labelled 00:00 (H1 00:00–03:00) is first visible on the **04:00** H1 bar; a signal there still fills at the **05:00** open.
+
+Do not cache a full-sample resample in `__init__` and then take `.iloc[-1]` as “now”. Do not call `resample_ohlc(window)` and treat a forming 4h bar as closed. Use `account["htf"]` or `handler.resample_htf` **inside** `on_bar`. Details: [USAGE.md](USAGE.md#multi-timeframe-no-future-bars).
 
 ## Bid and Ask
 
@@ -64,9 +72,9 @@ Numbers you see are **net** of these costs when you turn them on. Do not treat a
 
 | File | Role |
 | --- | --- |
-| `engine.py` | Main loop (`OOEngine`). Runs strategies and the broker together. |
+| `engine.py` | Main loop (`OOEngine`). t+1 fills, optional `htf_rules`, PIT fence. |
 | `broker.py` | Order queue and fill rules. |
-| `data_handler.py` | Loads Bid/Ask CSV data, pair names, pip size, lot size. |
+| `data_handler.py` | Bid/Ask CSV, pip/lot specs, as-of prefix, `pit_htf` / `resample_htf`. |
 | `portfolio.py` | Cash, positions, fees, swap, margin. |
 | `orders.py` | Order, fill, and trade records. |
 | `strategy.py` | Strategy interface. New code should use `on_bar`. |
@@ -81,8 +89,8 @@ There are also small **shim** files (`backtest_fun_consistent.py` and similar). 
 
 Subclass `Strategy` and implement `on_bar`. You receive:
 
-- `window`: all bars from the start **through the current bar**.
-- `account`: equity, balance, and open trades.
+- `window`: all bars from the start **through the current bar** (a copy).
+- `account`: equity, balance, open trades, and `htf` (empty unless you set `htf_rules`).
 
 Return a list of `Order` objects (market, limit, stop, trailing stop, or exit). Return an empty list if you do nothing.
 
@@ -104,7 +112,7 @@ From this folder:
 python -m pytest
 ```
 
-The tests check timing, Bid/Ask fills, fees, and that a strategy cannot see future bars.
+The tests check timing, Bid/Ask fills, fees, forming vs completed 4h bars, and that a strategy cannot see future bars.
 
 ## Honest limits
 
@@ -112,6 +120,9 @@ A backtest is a model. It can still be wrong if:
 
 - your data has gaps or errors,
 - you set fees and slippage to zero,
-- your strategy was fitted too hard on the same data you test.
+- your strategy was fitted too hard on the same data you test,
+- you build your own higher-timeframe series from the **full** file and read future rows.
+
+HTML trade charts may **draw** a few bars after the exit (`plot_trade` lookforward). That is a picture only, not a fill.
 
 The engine tries not to hide those problems. It does not make a strategy profitable.

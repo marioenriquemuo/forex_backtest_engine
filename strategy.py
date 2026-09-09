@@ -10,7 +10,10 @@ class Strategy(ABC):
         self.data = data
 
     def on_bar(self, window, account):
-        """Return a list of Order objects. window is bars [0..t] only."""
+        """Return a list of Order objects. window is bars [0..t] only (a copy).
+
+        account may include "htf" from OOEngine(htf_rules=...).
+        """
         sig = self.generate_signal(len(window), active_trades=account.get("active_trades"))
         return _as_orders(sig, "")
 

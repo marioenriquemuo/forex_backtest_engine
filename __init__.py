@@ -1,4 +1,7 @@
-"""BacktestEngine public surface."""
+"""BacktestEngine public surface.
+
+OOEngine(htf_rules=...) puts PIT higher-timeframe frames on account["htf"].
+"""
 
 from broker import BrokerSimulator
 from data_handler import DataHandler, align_htf_pit, instrument_spec, resample_ohlc

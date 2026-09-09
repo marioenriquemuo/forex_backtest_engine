@@ -161,7 +161,11 @@ def align_htf_pit(htf_df, base_index):
 
 
 class DataHandler:
-    """Synchronized Bid/Ask series, chronological bars, optional weekday ffill."""
+    """Synchronized Bid/Ask series, chronological bars, optional weekday ffill.
+
+    During OOEngine.on_bar, _asof is set so .data and resample_htf see a prefix only.
+    pit_htf / resample_htf apply align_htf_pit (completed HTF bars, never forming).
+    """
 
     def __init__(self, df, pair="EUR/USD", freq=None, contract_size=None):
         _require_cols(df, BID_ASK_COLS, pair)

@@ -31,6 +31,7 @@ def export_logs(result, out_dir):
 
 
 def plot_trade(handler, trade, out_html, lookback=20, lookforward=5):
+    """HTML Bid/Ask chart for one closed trade. lookforward is display only."""
     df = handler.data
     entry_i = int(trade.get("Entry_Bar_Index") or 0)
     exit_i = int(trade.get("Exit_Bar_Index") or entry_i)

@@ -175,8 +175,15 @@ class DataHandler:
         data = _to_ny_index(data)
         if freq:
             data = fill_missing_timestamps(data, freq)
-        self.data = data
+        self._data = data
+        self._asof = None
         self.spec = instrument_spec(self.pair, contract_size=contract_size)
+
+    @property
+    def data(self):
+        if self._asof is None:
+            return self._data
+        return self._data.iloc[: self._asof + 1].copy()
 
     @classmethod
     def from_csv(cls, path, pair="EUR/USD", start=None, end=None, freq=None, contract_size=None):
@@ -227,14 +234,24 @@ class DataHandler:
         return df
 
     def __len__(self):
-        return len(self.data)
+        return len(self._data)
 
     def bar(self, i):
-        return self.data.iloc[i]
+        return self._data.iloc[i]
 
     def window(self, t):
-        """Bars [0..t] inclusive. No future rows."""
-        return self.data.iloc[: t + 1]
+        """Bars [0..t] inclusive. Copy so strategies cannot mutate later bars."""
+        end = t
+        if self._asof is not None:
+            end = min(int(t), int(self._asof))
+        return self._data.iloc[: end + 1].copy()
+
+    def pit_htf(self, rule):
+        """Completed HTF only, aligned to the full LTF index (shift-1 then ffill)."""
+        src = self._data
+        return align_htf_pit(resample_ohlc(src, rule), src.index)
 
     def resample_htf(self, rule):
-        return resample_ohlc(self.data, rule)
+        """PIT HTF on currently visible data (prefix during on_bar)."""
+        src = self.data
+        return align_htf_pit(resample_ohlc(src, rule), src.index)

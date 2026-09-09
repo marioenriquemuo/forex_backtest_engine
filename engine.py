@@ -3,9 +3,11 @@
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+import pandas as pd
+
 from broker import BrokerSimulator
 from data_handler import DataHandler, normalize_pair
-from orders import Order
+from orders import EXIT, Order
 from portfolio import PortfolioManager
 from strategy import Strategy
 
@@ -40,6 +42,7 @@ class OOEngine:
         extra_slippage_pips=0.0,
         reject_entry_rate=0.0,
         rng=None,
+        htf_rules=(),
     ):
         self.handlers = {normalize_pair(k): v for k, v in handlers.items()}
         self.strategies = {normalize_pair(k): v for k, v in strategies.items()}
@@ -47,6 +50,11 @@ class OOEngine:
         self.extra_slippage_pips = float(extra_slippage_pips)
         self.reject_entry_rate = float(reject_entry_rate)
         self.rng = rng
+        self.htf_rules = tuple(htf_rules or ())
+        self._htf = {
+            pair: {rule: handler.pit_htf(rule) for rule in self.htf_rules}
+            for pair, handler in self.handlers.items()
+        }
         self.portfolio = PortfolioManager(
             start_balance=start_balance,
             leverage=leverage,
@@ -66,11 +74,37 @@ class OOEngine:
         self._notify_closed_from = 0
 
     def _union_index(self):
-        idxs = [h.data.index for h in self.handlers.values()]
+        idxs = [h._data.index for h in self.handlers.values()]
         out = idxs[0]
         for idx in idxs[1:]:
             out = out.union(idx)
         return out.sort_values()
+
+    def _htf_asof(self, pair, t):
+        out = {}
+        for rule, frame in self._htf.get(pair, {}).items():
+            out[rule] = frame.iloc[: t + 1].copy()
+        return out
+
+    @staticmethod
+    def _truncate_strategy_data(strat, ts):
+        restored = []
+        objs = [strat]
+        legacy = getattr(strat, "legacy", None)
+        if legacy is not None and legacy is not strat:
+            objs.append(legacy)
+        for obj in objs:
+            data = getattr(obj, "data", None)
+            if not isinstance(data, pd.DataFrame) or data.empty:
+                continue
+            restored.append((obj, data))
+            obj.data = data.loc[:ts].copy()
+        return restored
+
+    @staticmethod
+    def _restore_strategy_data(restored):
+        for obj, data in restored:
+            obj.data = data
 
     def _notify_legacy(self):
         newly = self.portfolio.closed[self._notify_closed_from :]
@@ -99,7 +133,7 @@ class OOEngine:
         for ts in self._union_index():
             bars_by_pair = {}
             for pair, handler in self.handlers.items():
-                if ts not in handler.data.index:
+                if ts not in handler._data.index:
                     continue
                 self._bar_index[pair] += 1
                 t = self._bar_index[pair]
@@ -126,16 +160,26 @@ class OOEngine:
                 for pair, bar in bars_by_pair.items():
                     t = self._bar_index[pair]
                     n_active = sum(1 for p in self.portfolio.positions if p.pair == pair)
-                    if n_active >= self.max_active:
-                        continue
-                    window = self.handlers[pair].window(t)
-                    account = {
-                        "equity": self.portfolio.equity(bars_by_pair),
-                        "balance": self.portfolio.balance,
-                        "active_trades": self.portfolio.active_trade_dicts(),
-                        "positions": list(self.portfolio.positions),
-                    }
-                    orders = self.strategies[pair].on_bar(window, account) or []
+                    at_cap = n_active >= self.max_active
+                    handler = self.handlers[pair]
+                    handler._asof = t
+                    restored = []
+                    try:
+                        window = handler.window(t)
+                        account = {
+                            "equity": self.portfolio.equity(bars_by_pair),
+                            "balance": self.portfolio.balance,
+                            "active_trades": self.portfolio.active_trade_dicts(),
+                            "positions": list(self.portfolio.positions),
+                            "htf": self._htf_asof(pair, t),
+                        }
+                        restored = self._truncate_strategy_data(
+                            self.strategies[pair], window.index[-1]
+                        )
+                        orders = self.strategies[pair].on_bar(window, account) or []
+                    finally:
+                        self._restore_strategy_data(restored)
+                        handler._asof = None
                     if not isinstance(orders, list):
                         orders = [orders]
                     cleaned = []
@@ -143,6 +187,8 @@ class OOEngine:
                         if not isinstance(o, Order):
                             continue
                         o.pair = o.pair or pair
+                        if at_cap and o.order_type != EXIT:
+                            continue
                         cleaned.append(o)
                     self.brokers[pair].enqueue(cleaned, created_bar=t)
 

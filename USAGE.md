@@ -74,7 +74,7 @@ These are the real arguments. Defaults are shown.
 | `strategies` | required | Dict: pair name → `Strategy` |
 | `start_balance` | required | Starting cash |
 | `slippage_pips` | `0.0` | Extra pips against you on market fills |
-| `max_active_trades_per_pair` | `2` | If this many trades are open on a pair, the strategy is **not** called for that pair |
+| `max_active_trades_per_pair` | `2` | Cap on open trades per pair. The strategy is still called; new entries are dropped, `EXIT` still queues |
 | `leverage` | `30.0` | Margin leverage |
 | `stop_out_fraction` | `0.5` | If equity drops below `used_margin * 0.5`, all positions close (`Margin`) |
 | `commission_per_lot` | `0.0` | Cash fee per lot at open |
@@ -86,6 +86,7 @@ These are the real arguments. Defaults are shown.
 | `extra_slippage_pips` | `0.0` | Extra random-run slippage (used by stress tests) |
 | `reject_entry_rate` | `0.0` | Chance to skip an entry (needs `rng`) |
 | `rng` | `None` | Random generator for rejects / stress |
+| `htf_rules` | `()` | Extra timeframes to attach on `account["htf"]`, e.g. `("4H", "1D")`. Point-in-time only |
 
 **Easy first run:** set `start_balance`, leave fees at zero, and set `lots` on the order yourself. Then turn on slippage and commission when you want a harder test.
 
@@ -166,6 +167,7 @@ orders = strategy.on_bar(window, account)
 | `balance` | Closed cash |
 | `active_trades` | List of open-trade dicts (`Type`, `Entry`, `SL`, `TP`, `Lots`, `Pair`, …) |
 | `positions` | The same opens as `Position` objects |
+| `htf` | Dict of higher-timeframe frames, same LTF index, **completed bars only**. Empty if you omit `htf_rules` |
 
 **Return value**
 
@@ -381,7 +383,19 @@ Those HTML files need `plotly`.
 6. Buys fill on **Ask**. Sells fill on **Bid**.
 7. If stop and target hit in the same bar, **stop wins**.
 8. If you leave `lots=None`, you must set `sl`, and size follows `max_risk_per_trade`.
-9. `max_active_trades_per_pair` can silence your strategy. Raise it while you debug.
+9. `max_active_trades_per_pair` blocks **new entries** when you are at the cap. `EXIT` still works. Raise the cap while you debug.
 10. First run: tiny data, one order, print `result.trades` and `result.queue_log`. Then use your CSV.
+
+### Multi-timeframe (no future bars)
+
+The engine will not let a higher timeframe see a candle before that candle is **finished**.
+
+- Pass `htf_rules=("4H",)` (and/or `"1D"`, etc.) into `OOEngine`.
+- In `on_bar`, read `account["htf"]["4H"].iloc[-1]`. That row is aligned to the current LTF bar.
+- An H4 bar labelled 00:00 uses H1 00:00–03:00 and is first visible on the **04:00** H1 bar (`align_htf_pit`: shift one HTF bar, then forward-fill). A signal there still fills at the **next** H1 open (05:00).
+- Do **not** cache `handler.resample_htf(...)` on the full file and then take `.iloc[-1]` as “now”. During `on_bar` the handler only exposes bars up to now, and `resample_htf` applies the same PIT shift.
+- Do **not** treat a forming 4h bar (01:00 / 02:00 / 03:00) as a closed 4h candle. The engine drops that.
+
+`plot_trade(..., lookforward=5)` may draw later candles. That is a chart only. Do not use it as signal input.
 
 The engine does not include a trading strategy. Your `on_bar` **is** the strategy.

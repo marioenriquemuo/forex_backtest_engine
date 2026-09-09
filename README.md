@@ -4,6 +4,8 @@ This project is a **backtest engine** for forex (and a few metals). A backtest i
 
 This repository has **the engine only**. It does not include trading strategies. You write a strategy yourself and pass it to the engine.
 
+**How to use it:** see [USAGE.md](USAGE.md) (step-by-step, with a small example).
+
 ## What the engine does
 
 You give it:

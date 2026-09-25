@@ -50,6 +50,40 @@ def test_metrics_hand_computed_five_trades():
     assert abs(m["mae_mean"] - 0.0012) < 1e-9
     assert m["cagr"] != 0.0
     assert "calmar" in m
+    assert m["periods_per_year"] == 0.0
+    assert m["sharpe"] == 0.0
+
+
+def test_sharpe_uses_calendar_bars_not_252():
+    import math
+
+    import pandas as pd
+
+    from metrics import infer_periods_per_year
+
+    idx = pd.date_range("2024-01-02 00:00", periods=25, freq="H", tz="America/New_York")
+    eq = [100.0 * (1.001 ** i) for i in range(26)]
+    trades = [
+        {
+            "Result": 1.0,
+            "Lots": 1.0,
+            "MAE": 0.0,
+            "MFE": 0.0,
+            "Date": idx[0],
+            "Exit_Date": idx[-1],
+        }
+    ]
+    m = compute_metrics(trades, eq, start_balance=100.0, index=idx, pip_size=0.0001)
+    rets = pd.Series(eq, dtype=float).pct_change().dropna()
+    ppy = infer_periods_per_year(idx, len(rets))
+    vol = float(rets.std(ddof=1))
+    mean_r = float(rets.mean())
+    expected = (mean_r / vol) * math.sqrt(ppy)
+    assert abs(m["periods_per_year"] - ppy) < 1e-9
+    assert ppy > 1000.0
+    assert abs(m["sharpe"] - expected) < 1e-9
+    daily = (mean_r / vol) * math.sqrt(252.0)
+    assert abs(m["sharpe"] - daily) > 0.1
 
 
 def test_oo_vs_jit_parity():

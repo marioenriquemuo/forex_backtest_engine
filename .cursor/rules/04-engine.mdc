@@ -1,0 +1,9 @@
+---
+description: Rules for the shared backtest engine
+globs: BacktestEngine/**/*.py
+alwaysApply: false
+---
+- This is SHARED infrastructure used by many strategies. Prioritise stability.
+- Do NOT change public function signatures without flagging every caller affected.
+- Keep the engine strategy-agnostic — no strategy-specific logic leaks in here.
+- Preserve existing behaviour unless explicitly asked to change it.

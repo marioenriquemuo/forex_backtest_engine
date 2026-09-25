@@ -1,0 +1,10 @@
+---
+description: Rules for loading and cleaning OHLC bid/ask CSV data
+globs: **/*data*.py, **/*load*.py, cleandata/**/*.py
+alwaysApply: false
+---
+- Data lives in lowercase `data/` (Linux is case-sensitive — never write `Data/`).
+- CSVs hold OHLC BID and ASK — always confirm which columns you're reading.
+- Parse dates explicitly; set and sort a timezone-aware datetime index.
+- Handle NaNs, gaps, and duplicate timestamps before use.
+- Fail loudly on missing/malformed files — no silent empty DataFrames.

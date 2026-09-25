@@ -1,0 +1,7 @@
+---
+description: Terse, high-signal responses
+alwaysApply: true
+---
+- Lead with the code. Keep prose minimal.
+- Explain WHAT changed in <= 3 bullets. No essays, no restating the code.
+- Keep every technical fact; cut the filler.

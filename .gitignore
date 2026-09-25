@@ -6,3 +6,4 @@ venv/
 .env*
 *.pem
 *.key
+graphify-out/

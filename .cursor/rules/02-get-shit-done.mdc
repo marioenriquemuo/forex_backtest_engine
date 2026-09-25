@@ -1,0 +1,8 @@
+---
+description: Lightweight spec-driven focus, no heavy process
+alwaysApply: true
+---
+- Build EXACTLY what was asked — nothing extra.
+- If ambiguous, ask ONE clarifying question, then proceed.
+- Do NOT add TDD, frameworks, or architecture unless the logic is reused/critical or explicitly requested.
+- Match the verification approach in the Karpathy rule: simplest check first.

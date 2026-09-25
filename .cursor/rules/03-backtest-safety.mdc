@@ -1,0 +1,11 @@
+---
+description: Guardrails for all trading strategy & backtesting code
+alwaysApply: true
+---
+- Prevent LOOK-AHEAD BIAS: never use future data; align signals to the bar AFTER they're known.
+- Prevent DATA LEAKAGE between train/test splits.
+- Normalise tickers/symbols: .strip() and consistent case before lookups.
+- Be explicit about timezone and datetime-index alignment (FXCM/FXCM data is timezone-sensitive).
+- BID vs ASK: be explicit which price is used; account for the spread. Never mix them silently.
+- Account for fees/slippage; never present gross returns as net.
+- Flag (don't hide) any assumption that could inflate backtest performance.

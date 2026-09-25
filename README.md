@@ -4,6 +4,7 @@ This project is a **backtest engine** for forex (and a few metals). A backtest i
 
 This repository has **the engine only**. It does not include trading strategies. You write a strategy yourself and pass it to the engine.
 
+**Setup (Python lab):** see [SETUP.md](SETUP.md) (ELI5: Miniconda + `fx-server37`).  
 **How to use it:** see [USAGE.md](USAGE.md) (step-by-step, with a small example).
 
 ## What the engine does
@@ -122,6 +123,8 @@ A backtest is a model. It can still be wrong if:
 - you set fees and slippage to zero,
 - your strategy was fitted too hard on the same data you test,
 - you build your own higher-timeframe series from the **full** file and read future rows.
+
+Sharpe and Sortino are yearly numbers. Pass bar timestamps (`index=index_from_result(result)`). The engine counts **how many of your bars fit in a calendar year**. Do not use 252 unless each equity point is a trading day. With no `index` and no `periods_per_year`, those ratios stay 0.
 
 HTML trade charts may **draw** a few bars after the exit (`plot_trade` lookforward). That is a picture only, not a fill.
 

@@ -14,26 +14,34 @@ This file is a step-by-step. Do the steps in order the first time.
 
 ## 0. Setup checklist (do this first)
 
-1. Open a terminal **inside this folder** (`BacktestEngine`).
-   Imports look like `from engine import OOEngine`. They only work if Python can see these files.
-2. Use the Python that already has `pandas` (this research env is Python 3.7 + pandas 1.3). You need `plotly` only if you want HTML charts.
-3. Check the engine is healthy:
+Full ELI5 (what Miniconda is, one-time install, daily activate, fix table): **[SETUP.md](SETUP.md)**.
+
+Short version:
+
+1. Activate the server-matched lab. Do **not** use system Python 3.14 or `forex-research/.venv`.
 
 ```bash
+source ~/miniconda3/etc/profile.d/conda.sh
+conda activate fx-server37
+```
+
+2. Work from this folder (`BacktestEngine`), or set `BACKTEST_ENGINE_ROOT` / `PYTHONPATH` (see SETUP.md).
+3. Health check (Numba must be on):
+
+```bash
+python -c "from engine_jit import _HAS_NUMBA; assert _HAS_NUMBA"
 python -m pytest
 ```
 
-If tests pass, the engine works on this machine. If `python` is missing, try `python3` or activate your conda env first.
+Pins: `requirements-server.txt`.
 
 4. Put your price file somewhere you can find (see the CSV shape below).
 5. Write a small script in **this same folder** (for example `run_once.py`).
-6. Run it from this folder:
+6. Run it:
 
 ```bash
 python run_once.py
 ```
-
-If you run the script from another folder, Python will say it cannot import `engine`. Either `cd` here, or add this folder to `PYTHONPATH`.
 
 ---
 
@@ -374,13 +382,23 @@ A list of dicts: each order the strategy queued (`created_bar`, `side`, `order_t
 ### 3.6 Numbers and files (optional next step)
 
 ```python
-from metrics import compute_metrics
+from metrics import compute_metrics, index_from_result
 from reporting import export_logs, plot_dashboard, plot_trade
 
-stats = compute_metrics(result.trades, result.equity_curve, start_balance=100000.0)
+stats = compute_metrics(
+    result.trades,
+    result.equity_curve,
+    start_balance=100000.0,
+    index=index_from_result(result),
+)
 # stats keys include: total_net_profit, cagr, payoff_ratio, expectancy_currency,
 # expectancy_pips, max_drawdown, max_drawdown_pct, ulcer_index, sharpe, sortino,
-# calmar, trades, win_rate, mae_mean, mfe_mean
+# calmar, trades, win_rate, mae_mean, mfe_mean, periods_per_year
+#
+# Sharpe/Sortino use the bar clock: periods_per_year = (number of equity
+# returns) / (calendar years from first bar to last bar). Do not pass 252
+# unless each equity point is a trading day. If you omit `index` and
+# `periods_per_year`, Sharpe and Sortino stay 0.
 
 paths = export_logs(result, "out")
 # writes: out/trade_log.csv, out/equity_curve.csv, out/order_queue.json, out/run_summary.json
@@ -408,6 +426,7 @@ Those HTML files need `plotly`.
 9. `max_active_trades_per_pair` blocks **new entries** when you are at the cap. `EXIT` still works. Raise the cap while you debug.
 10. First run: tiny data, one order, print `result.trades` and `result.queue_log`. Then use your CSV.
 11. For 4h/daily filters, set `htf_rules` and read `account["htf"]`. Do not keep a full-file HTF cache.
+12. For Sharpe/Sortino pass `index=index_from_result(result)` (or `handler.data.index`). Do not use 252 on H1/M15.
 
 ### Multi-timeframe (no future bars)
 

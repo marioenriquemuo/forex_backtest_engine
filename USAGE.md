@@ -399,6 +399,9 @@ stats = compute_metrics(
 # returns) / (calendar years from first bar to last bar). Do not pass 252
 # unless each equity point is a trading day. If you omit `index` and
 # `periods_per_year`, Sharpe and Sortino stay 0.
+#
+# Deflated Sharpe / random parameter search → see DSR.md
+# (pass if DSR >= 0.90; N = trials you actually ran, not full grid size).
 
 paths = export_logs(result, "out")
 # writes: out/trade_log.csv, out/equity_curve.csv, out/order_queue.json, out/run_summary.json

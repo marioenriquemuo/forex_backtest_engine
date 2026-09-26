@@ -1,9 +1,10 @@
 """Block bootstrap of closed trades and parametric execution perturbation."""
 
+import copy
+
 import numpy as np
 
 from engine import OOEngine
-from engine_jit import run_jit
 
 
 def moving_block_bootstrap(rets, n_sim, block_size, start_bal, rng):
@@ -66,8 +67,8 @@ def perturb_execution(
     for _ in range(int(n_runs)):
         extra = float(rng.uniform(0.0, max_extra_slip_pips))
         eng = OOEngine(
-            handlers,
-            strategies,
+            {k: copy.deepcopy(h) for k, h in handlers.items()},
+            {k: copy.deepcopy(s) for k, s in strategies.items()},
             start_balance,
             extra_slippage_pips=extra,
             reject_entry_rate=reject_rate,

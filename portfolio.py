@@ -4,7 +4,7 @@ from typing import List, Optional
 
 import pandas as pd
 
-from orders import BUY, ClosedTrade, Position, sl_on_correct_side
+from orders import BUY, ClosedTrade, Position, sl_on_correct_side, tp_on_correct_side
 from data_handler import instrument_spec, normalize_pair
 
 
@@ -45,6 +45,7 @@ class PortfolioManager:
         self.equity_curve = [float(start_balance)]
         self.last_rollover_date = None
         self.is_blown_up = False
+        self._last_mark = {}
 
     def lots_for_risk(self, entry, sl, risk_ratio, pip_size, contract_size):
         dist = abs(float(entry) - float(sl))
@@ -70,6 +71,8 @@ class PortfolioManager:
             dist = abs(fill.price - sl)
             tp = fill.price + dist * order.rr_ratio if is_buy else fill.price - dist * order.rr_ratio
         if not sl_on_correct_side(is_buy, fill.price, sl):
+            return None
+        if not tp_on_correct_side(is_buy, fill.price, tp):
             return None
         lots = order.lots
         if lots is None:
@@ -169,13 +172,17 @@ class PortfolioManager:
         total = 0.0
         for pos in self.positions:
             bar = bars_by_pair.get(pos.pair)
+            if bar is not None:
+                self._last_mark[pos.pair] = bar
+            else:
+                bar = self._last_mark.get(pos.pair)
             if bar is None:
                 continue
             if pos.side == BUY:
                 diff = float(bar["BidClose"]) - pos.entry
             else:
                 diff = pos.entry - float(bar["AskClose"])
-            total += diff * pos.lots * pos.contract_size
+            total += diff * pos.lots * pos.contract_size + pos.swap
         return total
 
     def equity(self, bars_by_pair):

@@ -149,8 +149,8 @@ class OOEngine:
                     bar,
                     t,
                     self.portfolio,
-                    reject_mask=self._maybe_reject,
                     extra_slippage=extra,
+                    pair=pair,
                 )
 
             if not bars_by_pair:
@@ -192,6 +192,9 @@ class OOEngine:
                             continue
                         o.pair = o.pair or pair
                         if at_cap and o.order_type != EXIT:
+                            continue
+                        # Reject-once at enqueue (matches JIT); do not re-roll every bar.
+                        if self._maybe_reject(o, t):
                             continue
                         cleaned.append(o)
                     self.brokers[pair].enqueue(cleaned, created_bar=t)

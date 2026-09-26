@@ -32,8 +32,14 @@ class ConsistentBacktestEngine(object):
         contract_size,
         max_active_trades=2,
         slippage_pips=1.0,
+        commission_per_lot=0.0,
+        commission_pct=0.0,
+        swap_long_per_lot=0.0,
+        swap_short_per_lot=0.0,
+        leverage=30.0,
     ):
         pair = getattr(strategy, "pair_name", None) or getattr(strategy, "pair", None) or "EUR/USD"
+        # pip_size is stored for callers; fills use instrument_spec(pair).
         self.handler = DataHandler(data, pair=pair, contract_size=contract_size)
         if not hasattr(strategy, "on_bar") or strategy.__class__.on_bar is Strategy.on_bar:
             wrapped = LegacyStrategyAdapter(strategy, pair=pair)
@@ -47,6 +53,11 @@ class ConsistentBacktestEngine(object):
             max_active_trades_per_pair=max_active_trades,
             max_risk_per_trade=max_risk_per_trade,
             contract_size=contract_size,
+            leverage=leverage,
+            commission_per_lot=commission_per_lot,
+            commission_pct=commission_pct,
+            swap_long_per_lot=swap_long_per_lot,
+            swap_short_per_lot=swap_short_per_lot,
         )
         self.strategy = strategy
         self.data = data

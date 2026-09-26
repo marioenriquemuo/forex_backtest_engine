@@ -1,6 +1,8 @@
 """Array-based execution loop. Numba-jitted when available.
 
 Replays frozen orders against Bid/Ask arrays using the same fill rules as BrokerSimulator.
+Supports market/limit/stop/trail, SL/TP side checks, and max_hold Time exits.
+No EXIT orders, commission_pct, swap, or margin stop-out — use OOEngine for those.
 """
 
 import numpy as np
@@ -27,6 +29,10 @@ OT_TRAIL = 3
 
 SIDE_BUY = 1
 SIDE_SELL = -1
+
+REASON_SL = 1
+REASON_TP = 2
+REASON_TIME = 3
 
 
 @njit
@@ -110,10 +116,25 @@ def _trail(is_buy, sl, trail, bid_high, ask_low):
 
 
 @njit
+def _sl_tp_ok(is_buy, px, sl, tp):
+    if sl == sl:
+        if is_buy == 1 and sl >= px:
+            return 0
+        if is_buy == 0 and sl <= px:
+            return 0
+    if tp == tp:
+        if is_buy == 1 and tp <= px:
+            return 0
+        if is_buy == 0 and tp >= px:
+            return 0
+    return 1
+
+
+@njit
 def jit_loop(
     bid_o, bid_h, bid_l, bid_c,
     ask_o, ask_h, ask_l, ask_c,
-    created, side, otype, price, sl, tp, lots, trail,
+    created, side, otype, price, sl, tp, lots, trail, max_hold,
     slip, extra_slip, reject, rng,
     start_balance, contract_size, commission_per_lot,
 ):
@@ -122,6 +143,7 @@ def jit_loop(
     live = np.zeros(n_ord, dtype=np.int8)
     filled = np.zeros(n_ord, dtype=np.int8)
     entry = np.zeros(n_ord, dtype=np.float64)
+    entry_bar = np.full(n_ord, -1, dtype=np.int64)
     cur_sl = sl.copy()
     cur_tp = tp.copy()
     closed_pnl = np.zeros(n_ord, dtype=np.float64)
@@ -149,9 +171,13 @@ def jit_loop(
                 )
             if px != px:
                 continue
+            if _sl_tp_ok(is_buy, px, sl[i], tp[i]) == 0:
+                filled[i] = 1
+                continue
             filled[i] = 1
             live[i] = 1
             entry[i] = px
+            entry_bar[i] = t
             balance -= lots[i] * commission_per_lot
             if otype[i] == OT_TRAIL and (cur_sl[i] != cur_sl[i]) and trail[i] == trail[i]:
                 cur_sl[i] = px - trail[i] if is_buy == 1 else px + trail[i]
@@ -169,6 +195,17 @@ def jit_loop(
             if live[i] != 1:
                 continue
             is_buy = 1 if side[i] == SIDE_BUY else 0
+            if max_hold[i] == max_hold[i]:
+                if t - entry_bar[i] >= int(max_hold[i]):
+                    xpx = bid_o[t] if is_buy == 1 else ask_o[t]
+                    pnl = lots[i] * contract_size * (
+                        (xpx - entry[i]) if is_buy == 1 else (entry[i] - xpx)
+                    )
+                    balance += pnl
+                    closed_pnl[i] = pnl
+                    closed_reason[i] = REASON_TIME
+                    live[i] = 0
+                    continue
             if is_buy == 1:
                 xpx, reason = _resolve_long(bid_o[t], bid_h[t], bid_l[t], cur_sl[i], cur_tp[i])
             else:
@@ -187,6 +224,7 @@ def jit_loop(
 
 
 _TYPE_MAP = {"market": OT_MARKET, "limit": OT_LIMIT, "stop": OT_STOP, "trailing_stop": OT_TRAIL}
+_REASON_NAME = {REASON_SL: "SL", REASON_TP: "TP", REASON_TIME: "Time"}
 
 
 def orders_to_arrays(orders, n_bars, reject_rate=0.0, extra_slippage=0.0, rng=None):
@@ -199,9 +237,12 @@ def orders_to_arrays(orders, n_bars, reject_rate=0.0, extra_slippage=0.0, rng=No
     tp = np.full(n, np.nan)
     lots = np.zeros(n, dtype=np.float64)
     trail = np.full(n, np.nan)
+    max_hold = np.full(n, np.nan)
     extra = np.zeros(n, dtype=np.float64)
     reject = np.zeros(n, dtype=np.int64)
     for i, o in enumerate(orders):
+        if getattr(o, "order_type", None) == "exit":
+            raise ValueError("JIT does not support EXIT orders; use OOEngine")
         created[i] = int(o.created_bar if o.created_bar is not None else -1)
         side[i] = SIDE_BUY if o.side == "B" else SIDE_SELL
         otype[i] = _TYPE_MAP.get(o.order_type, OT_MARKET)
@@ -214,10 +255,12 @@ def orders_to_arrays(orders, n_bars, reject_rate=0.0, extra_slippage=0.0, rng=No
         lots[i] = float(o.lots or 0.0)
         if o.trail_pips:
             trail[i] = float(o.trail_pips)
+        if o.max_hold_bars is not None:
+            max_hold[i] = float(o.max_hold_bars)
         extra[i] = float(extra_slippage)
         if reject_rate > 0 and rng is not None and rng.random() < reject_rate:
             reject[i] = 1
-    return created, side, otype, price, sl, tp, lots, trail, extra, reject
+    return created, side, otype, price, sl, tp, lots, trail, max_hold, extra, reject
 
 
 def run_jit(handler, orders, start_balance, slippage_pips=0.0, extra_slippage_pips=0.0,
@@ -231,7 +274,7 @@ def run_jit(handler, orders, start_balance, slippage_pips=0.0, extra_slippage_pi
         extra_slippage=extra_slippage_pips * pip,
         rng=rng,
     )
-    created, side, otype, price, sl, tp, lots, trail, extra, reject = arrays
+    created, side, otype, price, sl, tp, lots, trail, max_hold, extra, reject = arrays
     trail_px = trail.copy()
     trail_px = np.where(np.isnan(trail_px), trail_px, trail_px * pip)
     bal, pnl, reason, entry = jit_loop(
@@ -243,9 +286,9 @@ def run_jit(handler, orders, start_balance, slippage_pips=0.0, extra_slippage_pi
         df["AskHigh"].to_numpy(np.float64),
         df["AskLow"].to_numpy(np.float64),
         df["AskClose"].to_numpy(np.float64),
-        created, side, otype, price, sl, tp, lots, trail_px,
+        created, side, otype, price, sl, tp, lots, trail_px, max_hold,
         slippage_pips * pip, extra, reject,
-        np.zeros(1, dtype=np.float64) if rng is None else np.zeros(1, dtype=np.float64),
+        np.zeros(1, dtype=np.float64),
         float(start_balance), spec["contract_size"], float(commission_per_lot),
     )
     trades = []
@@ -256,7 +299,7 @@ def run_jit(handler, orders, start_balance, slippage_pips=0.0, extra_slippage_pi
             {
                 "Entry": float(entry[i]),
                 "Result": float(pnl[i]),
-                "Exit_Reason": "SL" if reason[i] == 1 else "TP",
+                "Exit_Reason": _REASON_NAME.get(int(reason[i]), "Unknown"),
                 "Lots": float(lots[i]),
             }
         )

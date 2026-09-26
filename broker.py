@@ -5,6 +5,7 @@ Fill helpers take scalars so the Numba loop can call the same logic.
 
 from typing import List
 
+from data_handler import normalize_pair
 from orders import (
     BUY,
     EXIT,
@@ -160,8 +161,16 @@ class BrokerSimulator:
             keep.append(order)
         self.working = keep
 
-    def process_bar(self, bar, bar_index, portfolio, reject_mask=None, extra_slippage=0.0):
-        """Execute working orders, then manage open positions. Returns fills."""
+    def process_bar(
+        self,
+        bar,
+        bar_index,
+        portfolio,
+        reject_mask=None,
+        extra_slippage=0.0,
+        pair=None,
+    ):
+        """Execute working orders, then manage open positions for `pair` only."""
         self._expire(bar_index)
         fills = []
         still = []
@@ -171,19 +180,22 @@ class BrokerSimulator:
                 extras.append(order)
                 continue
             if reject_mask is not None and reject_mask(order, bar_index):
+                # Reject-once cancel (caller should decide reject at enqueue).
                 continue
             extra = extra_slippage if order.order_type in (MARKET, TRAILING_STOP) else 0.0
             fill = self._try_fill_order(order, bar, bar_index, extra)
             if fill is None:
                 still.append(order)
                 continue
-            fills.append(fill)
             pos = portfolio.open_position(order, fill, bar)
-            if pos is not None:
-                self._same_bar_death(pos, bar, bar_index, portfolio)
+            if pos is None:
+                # Fill price ok but book rejected (bad SL/TP/risk) — cancel, do not drop as filled.
+                continue
+            fills.append(fill)
+            self._same_bar_death(pos, bar, bar_index, portfolio)
         self.working = extras + still
-        self._process_exits(bar, bar_index, portfolio)
-        self._manage_positions(bar, bar_index, portfolio)
+        self._process_exits(bar, bar_index, portfolio, pair=pair)
+        self._manage_positions(bar, bar_index, portfolio, pair=pair)
         return fills
 
     def _try_fill_order(self, order, bar, bar_index, extra_slip=0.0):
@@ -222,8 +234,15 @@ class BrokerSimulator:
             return
         portfolio.close_position(pos, px, reason, bar, bar_index)
 
-    def _manage_positions(self, bar, bar_index, portfolio):
+    def _pair_match(self, pos_pair, broker_pair):
+        if not broker_pair:
+            return True
+        return normalize_pair(pos_pair or "") == normalize_pair(broker_pair)
+
+    def _manage_positions(self, bar, bar_index, portfolio, pair=None):
         for pos in list(portfolio.positions):
+            if not self._pair_match(pos.pair, pair):
+                continue
             is_buy = pos.side == BUY
             if pos.max_hold_bars is not None:
                 if bar_index - pos.entry_bar >= int(pos.max_hold_bars):
@@ -244,7 +263,7 @@ class BrokerSimulator:
                 )
             portfolio.touch_excursion(pos, bar)
 
-    def _process_exits(self, bar, bar_index, portfolio):
+    def _process_exits(self, bar, bar_index, portfolio, pair=None):
         still = []
         for order in self.working:
             if order.order_type != EXIT:
@@ -252,7 +271,9 @@ class BrokerSimulator:
                 continue
             closed_any = False
             for pos in list(portfolio.positions):
-                if order.pair and pos.pair and order.pair != pos.pair:
+                if not self._pair_match(pos.pair, pair):
+                    continue
+                if order.pair and pos.pair and normalize_pair(order.pair) != normalize_pair(pos.pair):
                     continue
                 if order.side and pos.side != order.side:
                     continue

@@ -21,6 +21,14 @@ def sl_on_correct_side(is_buy, entry, sl):
     return sl > entry
 
 
+def tp_on_correct_side(is_buy, entry, tp):
+    if tp is None:
+        return True
+    if is_buy:
+        return tp > entry
+    return tp < entry
+
+
 @dataclass
 class Order:
     side: str

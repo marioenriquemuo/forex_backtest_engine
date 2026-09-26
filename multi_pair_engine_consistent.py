@@ -62,6 +62,11 @@ class MultiPairBacktestEngineConsistent(object):
             max_active_trades_per_pair=config["MAX_ACTIVE_TRADES_PER_PAIR"],
             max_risk_per_trade=config["MAX_RISK_PER_TRADE"],
             contract_size=contract,
+            leverage=config.get("LEVERAGE", 30.0),
+            commission_per_lot=config.get("COMMISSION_PER_LOT", 0.0),
+            commission_pct=config.get("COMMISSION_PCT", 0.0),
+            swap_long_per_lot=config.get("SWAP_LONG_PER_LOT", 0.0),
+            swap_short_per_lot=config.get("SWAP_SHORT_PER_LOT", 0.0),
         )
         self.result = None
 

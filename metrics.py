@@ -2,6 +2,7 @@
 
 Sharpe/Sortino are annualised from the bar clock, not a stock-day 252.
 Pass `index` (bar timestamps) or `periods_per_year`. With neither, those ratios stay 0.
+Win rate / expectancy / payoff use Result net of Commission when present.
 """
 
 import math
@@ -105,12 +106,13 @@ def _ann_factor(periods_per_year):
 
 
 def _years_from_trades(df):
+    """Calendar span from earliest entry to latest exit (not row order)."""
     if df is None or df.empty:
         return None
     if "Exit_Date" not in df.columns or "Date" not in df.columns:
         return None
-    t0 = pd.to_datetime(df["Date"].iloc[0], utc=True, errors="coerce")
-    t1 = pd.to_datetime(df["Exit_Date"].iloc[-1], utc=True, errors="coerce")
+    t0 = pd.to_datetime(df["Date"], utc=True, errors="coerce").min()
+    t1 = pd.to_datetime(df["Exit_Date"], utc=True, errors="coerce").max()
     if pd.isna(t0) or pd.isna(t1) or t1 <= t0:
         return None
     return calendar_years(t0, t1)
@@ -188,7 +190,10 @@ def compute_metrics(
         )
         return empty
 
+    # Net of commission (Result is gross pnl+swap; commission already left the cash balance).
     pnl = df["Result"].astype(float)
+    if "Commission" in df.columns:
+        pnl = pnl - df["Commission"].astype(float).fillna(0.0)
     wins = pnl[pnl > 0]
     losses = pnl[pnl < 0]
     avg_win = float(wins.mean()) if len(wins) else 0.0

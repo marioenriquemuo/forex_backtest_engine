@@ -1,0 +1,21 @@
+---
+description: Lab protocol for forex-research ideas and BacktestEngine runs
+alwaysApply: true
+---
+- Results are produced only in BacktestEngine (`OOEngine`, `stress.random_param_search`, `metrics.dsr_from_equity`). forex-research holds ideas and cards, never its own backtest loop.
+- One folder per idea under `forex-research/investigations/`. Each folder has one `CARD.md` copied from `forex-research/CARD_TEMPLATE.md`.
+- `CARD.md` has two sections:
+  - Open: intent (one sentence), pair, timeframe, date window, N, DSR, verdict, status, parent.
+  - Sealed: file pointers only. Knob lists and equity curves live in the idea's `sealed/` folder, never as values in `CARD.md` or the ledger.
+- Before-run gate: fill intent, pair, timeframe, date window and parent, set status `open`, and add the ledger row. Only then run BacktestEngine.
+- N = tries you actually ran (BacktestEngine `DSR.md`), not the size of the knob grid.
+- Pass = DSR >= 0.90. A pass has a blank verdict.
+- Verdict is blank or exactly one of: `cost`, `dsr`, `lookahead`, `sample`. It names the gate that killed the idea. No other labels.
+- Status is exactly one of: `unopened` (old folder, no card), `open` (card written, not finished), `closed` (N, DSR and verdict final).
+- `forex-research/LEDGER.md` holds open lines only: one row per idea folder with the open fields. Never knobs, equity numbers, or sealed content.
+- Never write notes about what almost worked, anywhere in the lab: not in cards, the ledger, sealed files, or commit messages.
+- A combination of ideas is a new folder. Its parent field lists the parent folders. Its N = its own tries + every parent's N.
+- Old folders stay uncarded, with status `unopened`, until someone opens them. Opening one means writing its `CARD.md` first.
+- Two sessions, never mixed:
+  - Librarian: may read the forex-research graph (`graphify-out/`), `LEDGER.md`, and the open sections of cards. Nothing else.
+  - Experimenter: may read BacktestEngine, the current idea folder (including its `sealed/`), and other ideas' open lines (`LEDGER.md` and card open sections). Never other ideas' `sealed/` folders or the forex-research graph.
